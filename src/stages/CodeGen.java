@@ -44,7 +44,6 @@ public class CodeGen {
 
     private final Parser.AST ast;
 
-
     public CodeGen(Parser.AST ast) {
         this.ast = ast;
     }
@@ -87,21 +86,14 @@ public class CodeGen {
                                                             ConstantDescs.INIT_NAME, ConstantDescs.MTD_void)
                                                     .return_()))
                             .withMethod("eval", MTD_interface_method, ClassFile.ACC_PUBLIC,
-                                    mb -> mb.withCode(
-                                            cb -> {
-                                                try {
-                                                    compile_(cb, clb, ast.expr()).dreturn();
-                                                } catch (CodeGenException e) {
-                                                    throw new CodeGenRuntimeException(e);
-                                                }
-                                            }
-                                    )
+                                    mb -> mb.withCode(cob -> build(cob, clb, false))
+                            ).withMethod("eval_s", MTD_interface_method, ClassFile.ACC_PUBLIC + ClassFile.ACC_STATIC,
+                                    mb -> mb.withCode(cob -> build(cob, clb, true))
                             ).withMethod("toString", MTD_String, ClassFile.ACC_PUBLIC, mb -> mb.withCode(cb ->  cb.ldc(clb.constantPool().stringEntry(ast.toString())).areturn()))
             );
         }catch (CodeGenRuntimeException e){
             throw (CodeGenException) e.getCause();
         }
-
 
         try {
             Files.write(Path.of(ast.name()+".class"), bytes);
@@ -136,80 +128,101 @@ public class CodeGen {
         };
     }
 
-    private void loadVar(CodeBuilder cob, ClassBuilder clb, String ident) throws CodeGenException{
-        int idx = ast.args().indexOf(ident);
-        if(idx==-1) {
-            switch (ident) {
-                case "pi", "Pi", "PI" -> cob.loadConstant(Math.PI);
-                case "e" -> cob.loadConstant(Math.E);
-                default -> throw new CodeGenException("Argument " + ident + " is not defined");
-            }
-            return;
-        }
-        if(ast.args().size()<=6){
-            cob.dload(idx*2+1);
-        }else{
-            cob.aload(1).loadConstant(idx).daload();
+    private CodeBuilder build(CodeBuilder cob, ClassBuilder clb, boolean isStatic) {
+        try {
+            return new CodeGenImpl(cob, clb, isStatic).build_(ast.expr()).dreturn();
+        } catch (CodeGenException e) {
+            throw new CodeGenRuntimeException(e);
         }
     }
 
-    private void power_const_integer_opt(CodeBuilder cob, ClassBuilder clb, Parser.Expr lhs, long pow) throws CodeGenException {
-        if(pow==0){
-            cob.loadConstant(1.0d);
-            return;
+    private class CodeGenImpl{
+        private final CodeBuilder cob;
+        private final ClassBuilder clb;
+        private final boolean isStatic;
+
+        private CodeGenImpl(CodeBuilder cob, ClassBuilder clb, boolean isStatic) {
+            this.cob = cob;
+            this.clb = clb;
+            this.isStatic = isStatic;
         }
 
-        if(pow<0){
-            cob.loadConstant(1.0d);
-            compile_(cob, clb, lhs);
-            cob.ddiv();
-            pow = -pow;
-        }else
-            compile_(cob, clb, lhs);
 
-        class Tmp{
-            static void run(CodeBuilder cob, long p){
-                if(p==1)return;
-                if((p&1)==1) cob.dup2();
-                cob.dup2();
-                cob.dmul();
-                run(cob, p/2);
-                if((p&1)==1) cob.dmul();
+        private void loadVar(String ident) throws CodeGenException{
+            int idx = ast.args().indexOf(ident);
+            if(idx==-1) {
+                switch (ident) {
+                    case "pi", "Pi", "PI" -> cob.loadConstant(Math.PI);
+                    case "e" -> cob.loadConstant(Math.E);
+                    default -> throw new CodeGenException("Argument " + ident + " is not defined");
+                }
+                return;
+            }
+            if(ast.args().size()<=6){
+                cob.dload(idx*2+(isStatic?0:1));
+            }else{
+                cob.aload(isStatic?0:1).loadConstant(idx).daload();
             }
         }
-        Tmp.run(cob, pow);
-    }
 
-    private CodeBuilder compile_(CodeBuilder cob, ClassBuilder clb, Parser.Expr expr) throws CodeGenException {
-        switch(expr){
-            case Parser.Ident(var ident) -> loadVar(cob, clb, ident);
-            case Parser.Val(double val) -> cob.loadConstant(val);
-            case Parser.Pow(var lhs, Parser.Val(var pow)) when (pow%1)==0 && -50<pow && pow<50 ->
-                    power_const_integer_opt(cob, clb, lhs, Math.round(pow));
-            case Parser.BinOp binOp -> {
-                compile_(cob, clb, binOp.lhs());
-                compile_(cob, clb, binOp.rhs());
-                switch (binOp) {
-                    case Parser.Add _ -> cob.dadd();
-                    case Parser.Sub _ -> cob.dsub();
-                    case Parser.Mul _ -> cob.dmul();
-                    case Parser.Div _ -> cob.ddiv();
-                    case Parser.Pow _ -> cob.invokestatic(CD_Math, "pow", MD_double_double_double);
+        private void power_const_integer_opt(Parser.Expr lhs, long pow) throws CodeGenException {
+            if(pow==0){
+                cob.loadConstant(1.0d);
+                return;
+            }
+
+            if(pow<0){
+                cob.loadConstant(1.0d);
+                build_(lhs);
+                cob.ddiv();
+                pow = -pow;
+            }else
+                build_(lhs);
+
+            class Tmp{
+                static void run(CodeBuilder cob, long p){
+                    if(p==1)return;
+                    if((p&1)==1) cob.dup2();
+                    cob.dup2();
+                    cob.dmul();
+                    run(cob, p/2);
+                    if((p&1)==1) cob.dmul();
                 }
             }
-            case Parser.Func func -> {
-                for(var arg : func.args()) compile_(cob, clb, arg);
-                var name = func.name();
-                if(Objects.equals(name, "ln")) name = "log";
-                cob.invokestatic(CD_Math, name, MD_double_doubleN[func.args().size()]);
-            }
-            case Parser.UnOp unOp -> {
-                compile_(cob, clb, unOp.expr());
-                switch(unOp){
-                    case Parser.Neg _ -> cob.dneg();
+            Tmp.run(cob, pow);
+        }
+
+        private CodeBuilder build_(Parser.Expr expr) throws CodeGenException {
+            switch(expr){
+                case Parser.Ident(var ident) -> loadVar(ident);
+                case Parser.Val(double val) -> cob.loadConstant(val);
+                case Parser.Pow(var lhs, Parser.Val(var pow)) when (pow%1)==0 && -50<pow && pow<50 ->
+                        power_const_integer_opt(lhs, Math.round(pow));
+                case Parser.BinOp binOp -> {
+                    build_(binOp.lhs());
+                    build_(binOp.rhs());
+                    switch (binOp) {
+                        case Parser.Add _ -> cob.dadd();
+                        case Parser.Sub _ -> cob.dsub();
+                        case Parser.Mul _ -> cob.dmul();
+                        case Parser.Div _ -> cob.ddiv();
+                        case Parser.Pow _ -> cob.invokestatic(CD_Math, "pow", MD_double_double_double);
+                    }
+                }
+                case Parser.Func func -> {
+                    for(var arg : func.args()) build_(arg);
+                    var name = func.name();
+                    if(Objects.equals(name, "ln")) name = "log";
+                    cob.invokestatic(CD_Math, name, MD_double_doubleN[func.args().size()]);
+                }
+                case Parser.UnOp unOp -> {
+                    build_(unOp.expr());
+                    switch(unOp){
+                        case Parser.Neg _ -> cob.dneg();
+                    }
                 }
             }
+            return cob;
         }
-        return cob;
     }
 }

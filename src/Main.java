@@ -1,7 +1,12 @@
-import stages.CodeGen;
-import stages.Compiler;
+import stages.*;
 
 public static void main() throws Exception {
+    System.out.println(Transformer.toString(Parser.parse(new Lexer("f(x) = x^3"))));
+    System.out.println(Transformer.toString(Transformer.derive(Parser.parse(new Lexer("f(x) = x^3")), "x")));
+
+    System.out.println(Transformer.toString(Parser.parse(new Lexer("f(x) = x^3+x^2+x/2-512+sin(x)"))));
+    System.out.println(Transformer.toString(Transformer.derive(Parser.parse(new Lexer("f(x) = x^3+x^2+x/2-512+sin(x)")), "x")));
+    if(true)return;
 
     System.out.println(Compiler.compile("f(x) = x^3"));
     for(int i = 0; i < 50; i ++){
