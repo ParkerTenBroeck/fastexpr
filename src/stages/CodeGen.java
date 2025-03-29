@@ -3,13 +3,17 @@ package stages;
 import util.Func;
 import util.Peekable;
 
+import java.io.IOException;
 import java.lang.classfile.ClassBuilder;
 import java.lang.classfile.ClassFile;
 import java.lang.classfile.CodeBuilder;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.ConstantDescs;
 import java.lang.constant.MethodTypeDesc;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Objects;
 
 public class CodeGen {
     public sealed interface Result {}
@@ -99,6 +103,11 @@ public class CodeGen {
         }
 
 
+        try {
+            Files.write(Path.of(ast.name()+".class"), bytes);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         Object instance;
         try{
             var clazz = new ClassLoader(){
@@ -144,29 +153,39 @@ public class CodeGen {
         }
     }
 
-    public CodeBuilder compile_(CodeBuilder cob, ClassBuilder clb, Parser.Expr expr) throws CodeGenException {
+    private void power_const_integer_opt(CodeBuilder cob, ClassBuilder clb, Parser.Expr lhs, long pow) throws CodeGenException {
+        if(pow==0){
+            cob.loadConstant(1.0d);
+            return;
+        }
+
+        if(pow<0){
+            cob.loadConstant(1.0d);
+            compile_(cob, clb, lhs);
+            cob.ddiv();
+            pow = -pow;
+        }else
+            compile_(cob, clb, lhs);
+
+        class Tmp{
+            static void run(CodeBuilder cob, long p){
+                if(p==1)return;
+                if((p&1)==1) cob.dup2();
+                cob.dup2();
+                cob.dmul();
+                run(cob, p/2);
+                if((p&1)==1) cob.dmul();
+            }
+        }
+        Tmp.run(cob, pow);
+    }
+
+    private CodeBuilder compile_(CodeBuilder cob, ClassBuilder clb, Parser.Expr expr) throws CodeGenException {
         switch(expr){
             case Parser.Ident(var ident) -> loadVar(cob, clb, ident);
             case Parser.Val(double val) -> cob.loadConstant(val);
-//            case Parser.Pow(var lhs, Parser.Val(var pow)) when (pow%1)==0 && -50<pow && pow<50 -> {
-//                var p = Math.round(pow);
-//                if(p==0){
-//                    cob.loadConstant(1.0d);
-//                    break;
-//                }
-//
-//                if(p<0){
-//                    cob.loadConstant(1.0d);
-//                    compile_(cob, clb, lhs);
-//                    cob.ddiv();
-//                    p = -p;
-//                }else
-//                    compile_(cob, clb, lhs);
-//                if(p)
-//                compile_(cob, clb, rhs);
-//                cob.dup2();
-//                cob.invokestatic(CD_Math, "pow", MD_double_double_double);
-//            }
+            case Parser.Pow(var lhs, Parser.Val(var pow)) when (pow%1)==0 && -50<pow && pow<50 ->
+                    power_const_integer_opt(cob, clb, lhs, Math.round(pow));
             case Parser.BinOp binOp -> {
                 compile_(cob, clb, binOp.lhs());
                 compile_(cob, clb, binOp.rhs());
@@ -180,7 +199,9 @@ public class CodeGen {
             }
             case Parser.Func func -> {
                 for(var arg : func.args()) compile_(cob, clb, arg);
-                cob.invokestatic(CD_Math, func.name(), MD_double_doubleN[func.args().size()]);
+                var name = func.name();
+                if(Objects.equals(name, "ln")) name = "log";
+                cob.invokestatic(CD_Math, name, MD_double_doubleN[func.args().size()]);
             }
             case Parser.UnOp unOp -> {
                 compile_(cob, clb, unOp.expr());

@@ -29,3 +29,6 @@ bin/
 .DS_Store
 .idea
 calculator.iml
+fastexpr.iml
+
+**/*.class
