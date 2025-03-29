@@ -1,3 +1,5 @@
+package util;
+
 public class Func {
     @FunctionalInterface
     public interface Func0{

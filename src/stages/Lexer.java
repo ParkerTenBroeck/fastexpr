@@ -1,3 +1,4 @@
+package stages;
 
 import util.Iterator;
 
@@ -28,7 +29,9 @@ public class Lexer implements Iterator<Lexer.Token> {
         Sub,
         Div,
         Mul,
-        Equals, Comma
+        Equals,
+        Carrot,
+        Comma
     }
 
     public record Ident(String ident) implements Token{}
@@ -60,6 +63,7 @@ public class Lexer implements Iterator<Lexer.Token> {
                         case '/':return Punc.Div;
                         case '*':return Punc.Mul;
                         case ',':return Punc.Comma;
+                        case '^':return Punc.Carrot;
                         case '=':return Punc.Equals;
                         default: {
                             if ('0' <= next && next <= '9'){
