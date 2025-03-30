@@ -52,7 +52,7 @@ public class CodeGen {
     static final MethodTypeDesc MD_double_doubleA = MethodTypeDesc.of(ConstantDescs.CD_double, ClassDesc.ofDescriptor(double[].class.descriptorString()));
 
     public ASTFunc run() throws CodeGenException{
-        ClassDesc CD_Hello = ClassDesc.of(ast.name());
+        ClassDesc CD_us = ClassDesc.of(ast.name());
         var iface = interfaces[Math.min(ast.args().size(), interfaces.length-1)];
         ClassDesc CD_Caller = ClassDesc.ofDescriptor(iface.descriptorString());
 
@@ -66,7 +66,7 @@ public class CodeGen {
 
         byte[] bytes;
         try{
-            bytes = ClassFile.of().build(CD_Hello,
+            bytes = ClassFile.of().build(CD_us,
                     clb -> {
                         clb.withFlags(ClassFile.ACC_PUBLIC)
                                 .withInterfaces(clb.constantPool().classEntry(CD_Caller))

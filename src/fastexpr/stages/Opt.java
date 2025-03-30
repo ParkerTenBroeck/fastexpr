@@ -36,6 +36,7 @@ public class Opt {
         };
 
         return switch(expr){
+            // constant folding rules
             case Add(Val(var lhs), Val(var rhs)) -> new Val(lhs+rhs);
             case Sub(Val(var lhs), Val(var rhs)) -> new Val(lhs-rhs);
             case Mul(Val(var lhs), Val(var rhs)) -> new Val(lhs*rhs);
@@ -46,7 +47,10 @@ public class Opt {
             case Func(var name, var args) when name.equals("cos") && args.getFirst() instanceof Val(var val) -> new Val(Math.cos(val));
             case Func(var name, var args) when name.equals("ln") && args.getFirst() instanceof Val(var val) -> new Val(Math.log(val));
 
+            // function transformation
+            case Func(var name, var args) when name.equals("sqrt") -> new Pow(args.getFirst(), new Val(0.5));
 
+            // negative associativity for add/sub
             case Add(Neg(var lhs), Neg(var rhs)) -> new Neg(new Add(lhs, rhs));
             case Sub(Neg(var lhs), Neg(var rhs)) -> new Neg(new Sub(lhs, rhs));
             case Add(var lhs, Neg(var rhs)) -> new Sub(lhs, rhs);
@@ -54,27 +58,36 @@ public class Opt {
             case Add(Neg(var lhs), var rhs) -> new Sub(rhs, lhs);
             case Sub(Neg(var lhs), var rhs) -> new Neg(new Add(lhs, rhs));
 
+            // subtraction & division cancellations
             case Sub(var lhs, var rhs) when lhs.equals(rhs) -> new Val(0);
             case Div(var lhs, var rhs) when lhs.equals(rhs) -> new Val(1);
 
+            // f(x)*1/g(x) = f(x)/g(x)
             case Mul(var lhs, Div(Val(int one), var rhs)) when one==1 -> new Div(lhs, rhs);
             case Mul(Div(Val(int one), var rhs), var lhs) when one==1 -> new Div(lhs, rhs);
 
+            // add/sub 0
             case Add(var lhs, Val(int zero)) when zero==0 -> lhs;
             case Add(Val(int zero), var rhs) when zero==0 -> rhs;
             case Sub(var lhs, Val(int zero)) when zero==0 -> lhs;
             case Sub(Val(int zero), var rhs) when zero==0 -> new Neg(rhs);
 
+            //mult constants
             case Mul(Val(int zero), var _) when zero==0 -> new Val(0.0);
             case Mul(Val(int one), var rhs) when one==1 -> rhs;
             case Mul(Val(int one), var rhs) when one==-1 -> new Neg(rhs);
+
+            //collect scalars
             case Mul(Val(var v1), Mul(Val(var v2), var rhs)) -> new Mul(new Val(v1*v2), rhs);
             case Mul(Val(var v1), Mul(var rhs, Val(var v2))) -> new Mul(new Val(v1*v2), rhs);
 
+            //div constants
             case Div(var lhs, Val(int one)) when one==1 -> lhs;
             case Div(Val(int zero), var _) when zero==0 -> new Val(0.0);
 
+            //double negative
             case Neg(Neg(var inner)) -> inner;
+            //distribute negatives into constants in div/mul
             case Neg(Mul(Val(var val), var rhs)) -> new Mul(new Val(-val), rhs);
             case Neg(Div(Val(var val), var rhs)) -> new Mul(new Val(-val), rhs);
             case Neg(Div(var lhs, Val(var val))) -> new Mul(lhs, new Val(-val));
