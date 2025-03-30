@@ -12,7 +12,12 @@ public class Parser {
        String name,
        List<String> args,
        Expr expr
-    ){}
+    ){
+        @Override
+        public String toString() {
+            return Transformer.toString(this);
+        }
+    }
     public sealed interface Expr{}
     public record Ident(String name) implements Expr{}
     public record Val(double value) implements Expr{}

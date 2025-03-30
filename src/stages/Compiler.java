@@ -6,7 +6,6 @@ public class Compiler {
     }
 
     public static CodeGen.Result compile(Parser.AST ast) throws CodeGen.CodeGenException {
-        Opt.run(ast);
-        return CodeGen.run(ast);
+        return CodeGen.run(Opt.run(ast));
     }
 }

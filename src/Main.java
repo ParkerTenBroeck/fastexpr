@@ -1,11 +1,14 @@
 import stages.*;
 
 public static void main() throws Exception {
-    System.out.println(Transformer.toString(Parser.parse(new Lexer("f(x) = x^3"))));
-    System.out.println(Transformer.toString(Transformer.derive(Parser.parse(new Lexer("f(x) = x^3")), "x")));
-
-    System.out.println(Transformer.toString(Parser.parse(new Lexer("f(x) = x^3+x^2+x/2-512+sin(x)"))));
-    System.out.println(Transformer.toString(Transformer.derive(Parser.parse(new Lexer("f(x) = x^3+x^2+x/2-512+sin(x)")), "x")));
+//    System.out.println(Parser.parse(new Lexer("f(x) = x^3")));
+//    System.out.println(Transformer.derive(Parser.parse(new Lexer("f(x) = x^3")), "x"));
+//
+//    System.out.println(Parser.parse(new Lexer("f(x) = x^3+x^2+x/2-512+sin(x)")));
+//    System.out.println(Opt.run(Transformer.derive(Parser.parse(new Lexer("f(x) = x^3+x^2+x/2-512+sin(x)")), "x")));
+    var func = Parser.parse(new Lexer("f(x) = 1/(1+e^x)"));
+    System.out.println(func);
+    System.out.println(Opt.run(Transformer.derive(func, "x")));
     if(true)return;
 
     System.out.println(Compiler.compile("f(x) = x^3"));

@@ -196,7 +196,7 @@ public class CodeGen {
             switch(expr){
                 case Parser.Ident(var ident) -> loadVar(ident);
                 case Parser.Val(double val) -> cob.loadConstant(val);
-                case Parser.Pow(var lhs, Parser.Val(var pow)) when (pow%1)==0 && -50<pow && pow<50 ->
+                case Parser.Pow(var lhs, Parser.Val(long pow)) when -50<pow && pow<50 -> // only true for whole numbers
                         power_const_integer_opt(lhs, Math.round(pow));
                 case Parser.BinOp binOp -> {
                     build_(binOp.lhs());
