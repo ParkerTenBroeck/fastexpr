@@ -16,32 +16,6 @@ import java.util.Objects;
 
 public class CodeGen {
 
-    public static class CodeGenException extends Exception{
-        public CodeGenException(String message) {
-            super(message);
-        }
-
-        public CodeGenException(Exception e) {
-            super(e);
-        }
-    }
-
-    private static class CodeGenRuntimeException extends RuntimeException{
-        public CodeGenRuntimeException(CodeGenException e){
-            super(e);
-        }
-    }
-
-    private final AST ast;
-
-    public CodeGen(AST ast) {
-        this.ast = ast;
-    }
-
-    public static ASTFunc run(AST ast) throws CodeGenException {
-        return new CodeGen(ast).run();
-    }
-
     static final Class<?>[] interfaces = new Class[]{Func0.class, Func1.class, Func2.class, Func3.class, Func4.class, Func5.class, Func6.class, FuncN.class};
     static final ClassDesc CD_Math = ClassDesc.ofDescriptor(Math.class.descriptorString());
     static final MethodTypeDesc MD_double = MethodTypeDesc.of(ConstantDescs.CD_double);
@@ -50,22 +24,30 @@ public class CodeGen {
     static final MethodTypeDesc MD_double_double_double_double = MethodTypeDesc.of(ConstantDescs.CD_double, ConstantDescs.CD_double, ConstantDescs.CD_double, ConstantDescs.CD_double);
     static final MethodTypeDesc[] MD_double_doubleN = new MethodTypeDesc[]{MD_double, MD_double_double, MD_double_double_double, MD_double_double_double_double};
     static final MethodTypeDesc MD_double_doubleA = MethodTypeDesc.of(ConstantDescs.CD_double, ClassDesc.ofDescriptor(double[].class.descriptorString()));
+    private final AST ast;
+    public CodeGen(AST ast) {
+        this.ast = ast;
+    }
 
-    public ASTFunc run() throws CodeGenException{
+    public static ASTFunc run(AST ast) throws CodeGenException {
+        return new CodeGen(ast).run();
+    }
+
+    public ASTFunc run() throws CodeGenException {
         ClassDesc CD_us = ClassDesc.of(ast.name());
-        var iface = interfaces[Math.min(ast.args().size(), interfaces.length-1)];
+        var iface = interfaces[Math.min(ast.args().size(), interfaces.length - 1)];
         ClassDesc CD_Caller = ClassDesc.ofDescriptor(iface.descriptorString());
 
         var params = iface.getDeclaredMethods()[0].getParameterTypes();
         var cd_params = new ClassDesc[params.length];
-        for(int i = 0; i < params.length; i ++){
+        for (int i = 0; i < params.length; i++) {
             cd_params[i] = ClassDesc.ofDescriptor(params[i].descriptorString());
         }
         MethodTypeDesc MTD_interface_method = MethodTypeDesc.of(ConstantDescs.CD_double, cd_params);
         MethodTypeDesc MTD_String = MethodTypeDesc.of(ConstantDescs.CD_String);
 
         byte[] bytes;
-        try{
+        try {
             bytes = ClassFile.of().build(CD_us,
                     clb -> {
                         clb.withFlags(ClassFile.ACC_PUBLIC)
@@ -81,34 +63,34 @@ public class CodeGen {
                                 ).withMethod("eval_s", MTD_interface_method, ClassFile.ACC_PUBLIC + ClassFile.ACC_STATIC,
                                         mb -> mb.withCode(cob -> build(cob, clb, true, ast.args().size() > 6))
                                 ).withMethod("toString", MTD_String, ClassFile.ACC_PUBLIC, mb -> mb.withCode(cb -> cb.ldc(clb.constantPool().stringEntry(ast.toString())).areturn()));
-                        if(ast.args().size() <= 6) {
+                        if (ast.args().size() <= 6) {
                             clb.withMethod("eval", MD_double_doubleA, ClassFile.ACC_PUBLIC,
                                     mb -> mb.withCode(cob -> build(cob, clb, false, true))
                             );
                         }
                     }
             );
-        }catch (CodeGenRuntimeException e){
+        } catch (CodeGenRuntimeException e) {
             throw (CodeGenException) e.getCause();
         }
 
         try {
-            Files.write(Path.of(ast.name()+".class"), bytes);
+            Files.write(Path.of(ast.name() + ".class"), bytes);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
         Object instance;
-        try{
-            var clazz = new ClassLoader(){
+        try {
+            var clazz = new ClassLoader() {
                 @Override
                 public Class<?> loadClass(String name) throws ClassNotFoundException {
-                    if(name.equals(ast.name()))
+                    if (name.equals(ast.name()))
                         return defineClass(name, bytes, 0, bytes.length);
                     return CodeGen.class.getClassLoader().loadClass(name);
                 }
             }.loadClass(ast.name());
             instance = clazz.getConstructor().newInstance();
-        }catch (Exception e){
+        } catch (Exception e) {
             throw new CodeGenException(e);
         }
 
@@ -124,7 +106,23 @@ public class CodeGen {
         }
     }
 
-    private class CodeGenImpl{
+    public static class CodeGenException extends Exception {
+        public CodeGenException(String message) {
+            super(message);
+        }
+
+        public CodeGenException(Exception e) {
+            super(e);
+        }
+    }
+
+    private static class CodeGenRuntimeException extends RuntimeException {
+        public CodeGenRuntimeException(CodeGenException e) {
+            super(e);
+        }
+    }
+
+    private class CodeGenImpl {
         private final CodeBuilder cob;
         private final ClassBuilder clb;
         private final boolean isStatic;
@@ -138,9 +136,9 @@ public class CodeGen {
         }
 
 
-        private void loadVar(String ident) throws CodeGenException{
+        private void loadVar(String ident) throws CodeGenException {
             int idx = ast.args().indexOf(ident);
-            if(idx==-1) {
+            if (idx == -1) {
                 switch (ident) {
                     case "pi", "Pi", "PI" -> cob.loadConstant(Math.PI);
                     case "e" -> cob.loadConstant(Math.E);
@@ -148,45 +146,45 @@ public class CodeGen {
                 }
                 return;
             }
-            if(useArray)
-                cob.aload(isStatic?0:1).loadConstant(idx).daload();
+            if (useArray)
+                cob.aload(isStatic ? 0 : 1).loadConstant(idx).daload();
             else
-                cob.dload(idx*2+(isStatic?0:1));
+                cob.dload(idx * 2 + (isStatic ? 0 : 1));
 
         }
 
         private void power_const_integer_opt(Expr lhs, long pow) throws CodeGenException {
-            if(pow==0){
+            if (pow == 0) {
                 cob.loadConstant(1.0d);
                 return;
             }
 
-            if(pow<0){
+            if (pow < 0) {
                 cob.loadConstant(1.0d);
                 build_(lhs);
                 cob.ddiv();
                 pow = -pow;
-            }else
+            } else
                 build_(lhs);
 
-            class Tmp{
-                static void run(CodeBuilder cob, long p){
-                    if(p==1)return;
-                    if((p&1)==1) cob.dup2();
+            class Tmp {
+                static void run(CodeBuilder cob, long p) {
+                    if (p == 1) return;
+                    if ((p & 1) == 1) cob.dup2();
                     cob.dup2();
                     cob.dmul();
-                    run(cob, p/2);
-                    if((p&1)==1) cob.dmul();
+                    run(cob, p / 2);
+                    if ((p & 1) == 1) cob.dmul();
                 }
             }
             Tmp.run(cob, pow);
         }
 
         private CodeBuilder build_(Expr expr) throws CodeGenException {
-            switch(expr){
+            switch (expr) {
                 case Ident(var ident) -> loadVar(ident);
                 case Val(double val) -> cob.loadConstant(val);
-                case Pow(var lhs, Val(long pow)) when -50<pow && pow<50 -> // only true for whole numbers
+                case Pow(var lhs, Val(long pow)) when -50 < pow && pow < 50 -> // only true for whole numbers
                         power_const_integer_opt(lhs, Math.round(pow));
                 case BinOp binOp -> {
                     build_(binOp.lhs());
@@ -200,14 +198,14 @@ public class CodeGen {
                     }
                 }
                 case Func func -> {
-                    for(var arg : func.args()) build_(arg);
+                    for (var arg : func.args()) build_(arg);
                     var name = func.name();
-                    if(Objects.equals(name, "ln")) name = "log";
+                    if (Objects.equals(name, "ln")) name = "log";
                     cob.invokestatic(CD_Math, name, MD_double_doubleN[func.args().size()]);
                 }
                 case UnOp unOp -> {
                     build_(unOp.expr());
-                    switch(unOp){
+                    switch (unOp) {
                         case Neg _ -> cob.dneg();
                     }
                 }

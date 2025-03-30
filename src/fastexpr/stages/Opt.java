@@ -4,15 +4,15 @@ import fastexpr.ast.*;
 
 public class Opt {
     public static AST run(AST ast) {
-        for(int i = 0; i < 100; i ++){
+        for (int i = 0; i < 100; i++) {
             var opt_ast = opt(ast);
-            if(opt_ast.equals(ast)) return opt_ast;
+            if (opt_ast.equals(ast)) return opt_ast;
             ast = opt_ast;
         }
         return ast;
     }
 
-    private static AST opt(AST ast){
+    private static AST opt(AST ast) {
         return new AST(
                 ast.name(),
                 ast.args(),
@@ -21,7 +21,7 @@ public class Opt {
     }
 
     private static Expr opt(Expr expr) {
-        expr = switch(expr){
+        expr = switch (expr) {
             case Add(var lhs, var rhs) -> new Add(opt(lhs), opt(rhs));
             case Sub(var lhs, var rhs) -> new Sub(opt(lhs), opt(rhs));
             case Mul(var lhs, var rhs) -> new Mul(opt(lhs), opt(rhs));
@@ -35,17 +35,20 @@ public class Opt {
             case Val val -> val;
         };
 
-        return switch(expr){
+        return switch (expr) {
             // constant folding rules
-            case Add(Val(var lhs), Val(var rhs)) -> new Val(lhs+rhs);
-            case Sub(Val(var lhs), Val(var rhs)) -> new Val(lhs-rhs);
-            case Mul(Val(var lhs), Val(var rhs)) -> new Val(lhs*rhs);
-            case Div(Val(var lhs), Val(var rhs)) -> new Val(lhs/rhs);
-            case Pow(Val(var lhs), Val(var rhs)) -> new Val(Math.pow(lhs,rhs));
+            case Add(Val(var lhs), Val(var rhs)) -> new Val(lhs + rhs);
+            case Sub(Val(var lhs), Val(var rhs)) -> new Val(lhs - rhs);
+            case Mul(Val(var lhs), Val(var rhs)) -> new Val(lhs * rhs);
+            case Div(Val(var lhs), Val(var rhs)) -> new Val(lhs / rhs);
+            case Pow(Val(var lhs), Val(var rhs)) -> new Val(Math.pow(lhs, rhs));
             case Neg(Val(var lhs)) -> new Val(-lhs);
-            case Func(var name, var args) when name.equals("sin") && args.getFirst() instanceof Val(var val) -> new Val(Math.sin(val));
-            case Func(var name, var args) when name.equals("cos") && args.getFirst() instanceof Val(var val) -> new Val(Math.cos(val));
-            case Func(var name, var args) when name.equals("ln") && args.getFirst() instanceof Val(var val) -> new Val(Math.log(val));
+            case Func(var name, var args) when name.equals("sin") && args.getFirst() instanceof Val(var val) ->
+                    new Val(Math.sin(val));
+            case Func(var name, var args) when name.equals("cos") && args.getFirst() instanceof Val(var val) ->
+                    new Val(Math.cos(val));
+            case Func(var name, var args) when name.equals("ln") && args.getFirst() instanceof Val(var val) ->
+                    new Val(Math.log(val));
 
             // function transformation
             case Func(var name, var args) when name.equals("sqrt") -> new Pow(args.getFirst(), new Val(0.5));
@@ -63,27 +66,27 @@ public class Opt {
             case Div(var lhs, var rhs) when lhs.equals(rhs) -> new Val(1);
 
             // f(x)*1/g(x) = f(x)/g(x)
-            case Mul(var lhs, Div(Val(int one), var rhs)) when one==1 -> new Div(lhs, rhs);
-            case Mul(Div(Val(int one), var rhs), var lhs) when one==1 -> new Div(lhs, rhs);
+            case Mul(var lhs, Div(Val(int one), var rhs)) when one == 1 -> new Div(lhs, rhs);
+            case Mul(Div(Val(int one), var rhs), var lhs) when one == 1 -> new Div(lhs, rhs);
 
             // add/sub 0
-            case Add(var lhs, Val(int zero)) when zero==0 -> lhs;
-            case Add(Val(int zero), var rhs) when zero==0 -> rhs;
-            case Sub(var lhs, Val(int zero)) when zero==0 -> lhs;
-            case Sub(Val(int zero), var rhs) when zero==0 -> new Neg(rhs);
+            case Add(var lhs, Val(int zero)) when zero == 0 -> lhs;
+            case Add(Val(int zero), var rhs) when zero == 0 -> rhs;
+            case Sub(var lhs, Val(int zero)) when zero == 0 -> lhs;
+            case Sub(Val(int zero), var rhs) when zero == 0 -> new Neg(rhs);
 
             //mult constants
-            case Mul(Val(int zero), var _) when zero==0 -> new Val(0.0);
-            case Mul(Val(int one), var rhs) when one==1 -> rhs;
-            case Mul(Val(int one), var rhs) when one==-1 -> new Neg(rhs);
+            case Mul(Val(int zero), var _) when zero == 0 -> new Val(0.0);
+            case Mul(Val(int one), var rhs) when one == 1 -> rhs;
+            case Mul(Val(int one), var rhs) when one == -1 -> new Neg(rhs);
 
             //collect scalars
-            case Mul(Val(var v1), Mul(Val(var v2), var rhs)) -> new Mul(new Val(v1*v2), rhs);
-            case Mul(Val(var v1), Mul(var rhs, Val(var v2))) -> new Mul(new Val(v1*v2), rhs);
+            case Mul(Val(var v1), Mul(Val(var v2), var rhs)) -> new Mul(new Val(v1 * v2), rhs);
+            case Mul(Val(var v1), Mul(var rhs, Val(var v2))) -> new Mul(new Val(v1 * v2), rhs);
 
             //div constants
-            case Div(var lhs, Val(int one)) when one==1 -> lhs;
-            case Div(Val(int zero), var _) when zero==0 -> new Val(0.0);
+            case Div(var lhs, Val(int one)) when one == 1 -> lhs;
+            case Div(Val(int zero), var _) when zero == 0 -> new Val(0.0);
 
             //double negative
             case Neg(Neg(var inner)) -> inner;

@@ -4,6 +4,7 @@ import fastexpr.stages.*;
 
 public static void main() throws Exception {
 
+
     var expr = "f(x) = 1/(1+e^x)";
 //    System.out.println(AST.parse(expr));
 //    System.out.println(AST.parse(expr).derivative("x"));
