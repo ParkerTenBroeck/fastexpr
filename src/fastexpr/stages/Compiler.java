@@ -1,13 +1,14 @@
 package fastexpr.stages;
 
 import fastexpr.ast.AST;
+import fastexpr.func.ASTFunc;
 
 public class Compiler {
-    public static CodeGen.Result compile(String expr) throws Parser.ParserException, CodeGen.CodeGenException {
+    public static ASTFunc compile(String expr) throws Parser.ParserException, CodeGen.CodeGenException {
         return compile(Parser.parse(new Lexer(expr)));
     }
 
-    public static CodeGen.Result compile(AST ast) throws CodeGen.CodeGenException {
+    public static ASTFunc compile(AST ast) throws CodeGen.CodeGenException {
         return CodeGen.run(Opt.run(ast));
     }
 }

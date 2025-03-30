@@ -15,15 +15,6 @@ import java.nio.file.Path;
 import java.util.Objects;
 
 public class CodeGen {
-    public sealed interface Result {}
-    public record F0(Func0 f) implements Result {}
-    public record F1(Func1 f) implements Result {}
-    public record F2(Func2 f) implements Result {}
-    public record F3(Func3 f) implements Result {}
-    public record F4(Func4 f) implements Result {}
-    public record F5(Func5 f) implements Result {}
-    public record F6(Func6 f) implements Result {}
-    public record FN(FuncN f) implements Result {}
 
     public static class CodeGenException extends Exception{
         public CodeGenException(String message) {
@@ -47,7 +38,7 @@ public class CodeGen {
         this.ast = ast;
     }
 
-    public static Result run(AST ast) throws CodeGenException {
+    public static ASTFunc run(AST ast) throws CodeGenException {
         return new CodeGen(ast).run();
     }
 
@@ -59,7 +50,7 @@ public class CodeGen {
     static final MethodTypeDesc MD_double_double_double_double = MethodTypeDesc.of(ConstantDescs.CD_double, ConstantDescs.CD_double, ConstantDescs.CD_double, ConstantDescs.CD_double);
     static final MethodTypeDesc[] MD_double_doubleN = new MethodTypeDesc[]{MD_double, MD_double_double, MD_double_double_double, MD_double_double_double_double};
 
-    public Result run() throws CodeGenException{
+    public ASTFunc run() throws CodeGenException{
         ClassDesc CD_Hello = ClassDesc.of(ast.name());
         var iface = interfaces[Math.min(ast.args().size(), interfaces.length-1)];
         ClassDesc CD_Caller = ClassDesc.ofDescriptor(iface.descriptorString());
@@ -115,16 +106,7 @@ public class CodeGen {
         }
 
 
-        return switch(ast.args().size()){
-            case 0 -> new F0((Func0) instance);
-            case 1 -> new F1((Func1) instance);
-            case 2 -> new F2((Func2) instance);
-            case 3 -> new F3((Func3) instance);
-            case 4 -> new F4((Func4) instance);
-            case 5 -> new F5((Func5) instance);
-            case 6 -> new F6((Func6) instance);
-            default -> new FN((FuncN) instance);
-        };
+        return (ASTFunc) instance;
     }
 
     private CodeBuilder build(CodeBuilder cob, ClassBuilder clb, boolean isStatic) {
