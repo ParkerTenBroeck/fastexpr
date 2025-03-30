@@ -1,16 +1,15 @@
+import fastexpr.ast.AST;
 import fastexpr.func.*;
 import fastexpr.stages.*;
 
 public static void main() throws Exception {
-//    System.out.println(Parser.parse(new Lexer("f(x) = x^3")));
-//    System.out.println(Transformer.derive(Parser.parse(new Lexer("f(x) = x^3")), "x"));
-//
-//    System.out.println(Parser.parse(new Lexer("f(x) = x^3+x^2+x/2-512+sin(x)")));
-//    System.out.println(Opt.run(Transformer.derive(Parser.parse(new Lexer("f(x) = x^3+x^2+x/2-512+sin(x)")), "x")));
-    var func = Parser.parse(new Lexer("f(x) = 1/(1+e^x)"));
-    System.out.println(func);
-    System.out.println(Opt.run(Transformer.derive(func, "x")));
-    if(true)return;
+
+    var expr = "f(x) = 1/(1+e^x)";
+    System.out.println(AST.parse(expr));
+    System.out.println(AST.parse(expr).derivative("x"));
+    System.out.println(AST.parse(expr).derivative("x").opt());
+    System.out.println(AST.parse(expr).derivative("x").opt().compile().eval(0));
+//    if(true)return;
 
     System.out.println(Compiler.compile("f(x) = x^3"));
     for(int i = 0; i < 50; i ++){

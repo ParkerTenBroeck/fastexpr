@@ -49,6 +49,7 @@ public class CodeGen {
     static final MethodTypeDesc MD_double_double_double = MethodTypeDesc.of(ConstantDescs.CD_double, ConstantDescs.CD_double, ConstantDescs.CD_double);
     static final MethodTypeDesc MD_double_double_double_double = MethodTypeDesc.of(ConstantDescs.CD_double, ConstantDescs.CD_double, ConstantDescs.CD_double, ConstantDescs.CD_double);
     static final MethodTypeDesc[] MD_double_doubleN = new MethodTypeDesc[]{MD_double, MD_double_double, MD_double_double_double, MD_double_double_double_double};
+    static final MethodTypeDesc MD_double_doubleA = MethodTypeDesc.of(ConstantDescs.CD_double, ClassDesc.ofDescriptor(double[].class.descriptorString()));
 
     public ASTFunc run() throws CodeGenException{
         ClassDesc CD_Hello = ClassDesc.of(ast.name());
@@ -66,20 +67,26 @@ public class CodeGen {
         byte[] bytes;
         try{
             bytes = ClassFile.of().build(CD_Hello,
-                    clb -> clb.withFlags(ClassFile.ACC_PUBLIC)
-                            .withInterfaces(clb.constantPool().classEntry(CD_Caller))
-                            .withMethod(ConstantDescs.INIT_NAME, ConstantDescs.MTD_void,
-                                    ClassFile.ACC_PUBLIC,
-                                    mb -> mb.withCode(
-                                            cob -> cob.aload(0)
-                                                    .invokespecial(ConstantDescs.CD_Object,
-                                                            ConstantDescs.INIT_NAME, ConstantDescs.MTD_void)
-                                                    .return_()))
-                            .withMethod("eval", MTD_interface_method, ClassFile.ACC_PUBLIC,
-                                    mb -> mb.withCode(cob -> build(cob, clb, false))
-                            ).withMethod("eval_s", MTD_interface_method, ClassFile.ACC_PUBLIC + ClassFile.ACC_STATIC,
-                                    mb -> mb.withCode(cob -> build(cob, clb, true))
-                            ).withMethod("toString", MTD_String, ClassFile.ACC_PUBLIC, mb -> mb.withCode(cb ->  cb.ldc(clb.constantPool().stringEntry(ast.toString())).areturn()))
+                    clb -> {
+                        clb.withFlags(ClassFile.ACC_PUBLIC)
+                                .withInterfaces(clb.constantPool().classEntry(CD_Caller))
+                                .withMethod(ConstantDescs.INIT_NAME, ConstantDescs.MTD_void, ClassFile.ACC_PUBLIC,
+                                        mb -> mb.withCode(
+                                                cob -> cob.aload(0)
+                                                        .invokespecial(ConstantDescs.CD_Object,
+                                                                ConstantDescs.INIT_NAME, ConstantDescs.MTD_void)
+                                                        .return_()))
+                                .withMethod("eval", MTD_interface_method, ClassFile.ACC_PUBLIC,
+                                        mb -> mb.withCode(cob -> build(cob, clb, false, ast.args().size() > 6))
+                                ).withMethod("eval_s", MTD_interface_method, ClassFile.ACC_PUBLIC + ClassFile.ACC_STATIC,
+                                        mb -> mb.withCode(cob -> build(cob, clb, true, ast.args().size() > 6))
+                                ).withMethod("toString", MTD_String, ClassFile.ACC_PUBLIC, mb -> mb.withCode(cb -> cb.ldc(clb.constantPool().stringEntry(ast.toString())).areturn()));
+                        if(ast.args().size() <= 6) {
+                            clb.withMethod("eval", MD_double_doubleA, ClassFile.ACC_PUBLIC,
+                                    mb -> mb.withCode(cob -> build(cob, clb, false, true))
+                            );
+                        }
+                    }
             );
         }catch (CodeGenRuntimeException e){
             throw (CodeGenException) e.getCause();
@@ -109,9 +116,9 @@ public class CodeGen {
         return (ASTFunc) instance;
     }
 
-    private CodeBuilder build(CodeBuilder cob, ClassBuilder clb, boolean isStatic) {
+    private CodeBuilder build(CodeBuilder cob, ClassBuilder clb, boolean isStatic, boolean useArray) {
         try {
-            return new CodeGenImpl(cob, clb, isStatic).build_(ast.expr()).dreturn();
+            return new CodeGenImpl(cob, clb, isStatic, useArray).build_(ast.expr()).dreturn();
         } catch (CodeGenException e) {
             throw new CodeGenRuntimeException(e);
         }
@@ -121,11 +128,13 @@ public class CodeGen {
         private final CodeBuilder cob;
         private final ClassBuilder clb;
         private final boolean isStatic;
+        private final boolean useArray;
 
-        private CodeGenImpl(CodeBuilder cob, ClassBuilder clb, boolean isStatic) {
+        private CodeGenImpl(CodeBuilder cob, ClassBuilder clb, boolean isStatic, boolean useArray) {
             this.cob = cob;
             this.clb = clb;
             this.isStatic = isStatic;
+            this.useArray = useArray;
         }
 
 
@@ -139,11 +148,11 @@ public class CodeGen {
                 }
                 return;
             }
-            if(ast.args().size()<=6){
-                cob.dload(idx*2+(isStatic?0:1));
-            }else{
+            if(useArray)
                 cob.aload(isStatic?0:1).loadConstant(idx).daload();
-            }
+            else
+                cob.dload(idx*2+(isStatic?0:1));
+
         }
 
         private void power_const_integer_opt(Expr lhs, long pow) throws CodeGenException {
