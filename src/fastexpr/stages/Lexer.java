@@ -1,6 +1,6 @@
-package stages;
+package fastexpr.stages;
 
-import util.Iterator;
+import fastexpr.util.Iterator;
 
 
 public class Lexer implements Iterator<Lexer.Token> {

@@ -1,4 +1,4 @@
-import stages.*;
+import fastexpr.stages.*;
 
 public static void main() throws Exception {
 //    System.out.println(Parser.parse(new Lexer("f(x) = x^3")));

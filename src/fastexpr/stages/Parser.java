@@ -1,40 +1,13 @@
-package stages;
+package fastexpr.stages;
 
-import util.Iterator;
-import util.Peekable;
+import fastexpr.ast.*;
+import fastexpr.util.Iterator;
+import fastexpr.util.Peekable;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class Parser {
-
-    public record AST(
-       String name,
-       List<String> args,
-       Expr expr
-    ){
-        @Override
-        public String toString() {
-            return Transformer.toString(this);
-        }
-    }
-    public sealed interface Expr{}
-    public record Ident(String name) implements Expr{}
-    public record Val(double value) implements Expr{}
-    public sealed interface BinOp extends Expr{
-        Expr lhs();
-        Expr rhs();
-    }
-    public record Add(Expr lhs, Expr rhs) implements BinOp{}
-    public record Sub(Expr lhs, Expr rhs) implements BinOp{}
-    public record Mul(Expr lhs, Expr rhs) implements BinOp{}
-    public record Div(Expr lhs, Expr rhs) implements BinOp{}
-    public record Pow(Expr lhs, Expr rhs) implements BinOp{}
-    public sealed interface UnOp extends Expr{
-        Expr expr();
-    }
-    public record Neg(Expr expr) implements UnOp{}
-    public record Func(String name, List<Expr> args) implements Expr{}
 
     public static class ParserException extends Exception{
         public ParserException(String s) {

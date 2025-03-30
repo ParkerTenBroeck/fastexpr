@@ -1,7 +1,7 @@
-package stages;
+package fastexpr.stages;
 
-import util.Func;
-import util.Peekable;
+import fastexpr.ast.*;
+import fastexpr.func.*;
 
 import java.io.IOException;
 import java.lang.classfile.ClassBuilder;
@@ -12,19 +12,18 @@ import java.lang.constant.ConstantDescs;
 import java.lang.constant.MethodTypeDesc;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Objects;
 
 public class CodeGen {
     public sealed interface Result {}
-    public record F0(Func.Func0 f) implements Result {}
-    public record F1(Func.Func1 f) implements Result {}
-    public record F2(Func.Func2 f) implements Result {}
-    public record F3(Func.Func3 f) implements Result {}
-    public record F4(Func.Func4 f) implements Result {}
-    public record F5(Func.Func5 f) implements Result {}
-    public record F6(Func.Func6 f) implements Result {}
-    public record FN(Func.FuncN f) implements Result {}
+    public record F0(Func0 f) implements Result {}
+    public record F1(Func1 f) implements Result {}
+    public record F2(Func2 f) implements Result {}
+    public record F3(Func3 f) implements Result {}
+    public record F4(Func4 f) implements Result {}
+    public record F5(Func5 f) implements Result {}
+    public record F6(Func6 f) implements Result {}
+    public record FN(FuncN f) implements Result {}
 
     public static class CodeGenException extends Exception{
         public CodeGenException(String message) {
@@ -42,17 +41,17 @@ public class CodeGen {
         }
     }
 
-    private final Parser.AST ast;
+    private final AST ast;
 
-    public CodeGen(Parser.AST ast) {
+    public CodeGen(AST ast) {
         this.ast = ast;
     }
 
-    public static Result run(Parser.AST ast) throws CodeGenException {
+    public static Result run(AST ast) throws CodeGenException {
         return new CodeGen(ast).run();
     }
 
-    static final Class<?>[] interfaces = new Class[]{Func.Func0.class, Func.Func1.class, Func.Func2.class, Func.Func3.class, Func.Func4.class, Func.Func5.class, Func.Func6.class, Func.FuncN.class};
+    static final Class<?>[] interfaces = new Class[]{Func0.class, Func1.class, Func2.class, Func3.class, Func4.class, Func5.class, Func6.class, FuncN.class};
     static final ClassDesc CD_Math = ClassDesc.ofDescriptor(Math.class.descriptorString());
     static final MethodTypeDesc MD_double = MethodTypeDesc.of(ConstantDescs.CD_double);
     static final MethodTypeDesc MD_double_double = MethodTypeDesc.of(ConstantDescs.CD_double, ConstantDescs.CD_double);
@@ -117,14 +116,14 @@ public class CodeGen {
 
 
         return switch(ast.args().size()){
-            case 0 -> new F0((Func.Func0) instance);
-            case 1 -> new F1((Func.Func1) instance);
-            case 2 -> new F2((Func.Func2) instance);
-            case 3 -> new F3((Func.Func3) instance);
-            case 4 -> new F4((Func.Func4) instance);
-            case 5 -> new F5((Func.Func5) instance);
-            case 6 -> new F6((Func.Func6) instance);
-            default -> new FN((Func.FuncN) instance);
+            case 0 -> new F0((Func0) instance);
+            case 1 -> new F1((Func1) instance);
+            case 2 -> new F2((Func2) instance);
+            case 3 -> new F3((Func3) instance);
+            case 4 -> new F4((Func4) instance);
+            case 5 -> new F5((Func5) instance);
+            case 6 -> new F6((Func6) instance);
+            default -> new FN((FuncN) instance);
         };
     }
 
@@ -165,7 +164,7 @@ public class CodeGen {
             }
         }
 
-        private void power_const_integer_opt(Parser.Expr lhs, long pow) throws CodeGenException {
+        private void power_const_integer_opt(Expr lhs, long pow) throws CodeGenException {
             if(pow==0){
                 cob.loadConstant(1.0d);
                 return;
@@ -192,33 +191,33 @@ public class CodeGen {
             Tmp.run(cob, pow);
         }
 
-        private CodeBuilder build_(Parser.Expr expr) throws CodeGenException {
+        private CodeBuilder build_(Expr expr) throws CodeGenException {
             switch(expr){
-                case Parser.Ident(var ident) -> loadVar(ident);
-                case Parser.Val(double val) -> cob.loadConstant(val);
-                case Parser.Pow(var lhs, Parser.Val(long pow)) when -50<pow && pow<50 -> // only true for whole numbers
+                case Ident(var ident) -> loadVar(ident);
+                case Val(double val) -> cob.loadConstant(val);
+                case Pow(var lhs, Val(long pow)) when -50<pow && pow<50 -> // only true for whole numbers
                         power_const_integer_opt(lhs, Math.round(pow));
-                case Parser.BinOp binOp -> {
+                case BinOp binOp -> {
                     build_(binOp.lhs());
                     build_(binOp.rhs());
                     switch (binOp) {
-                        case Parser.Add _ -> cob.dadd();
-                        case Parser.Sub _ -> cob.dsub();
-                        case Parser.Mul _ -> cob.dmul();
-                        case Parser.Div _ -> cob.ddiv();
-                        case Parser.Pow _ -> cob.invokestatic(CD_Math, "pow", MD_double_double_double);
+                        case Add _ -> cob.dadd();
+                        case Sub _ -> cob.dsub();
+                        case Mul _ -> cob.dmul();
+                        case Div _ -> cob.ddiv();
+                        case Pow _ -> cob.invokestatic(CD_Math, "pow", MD_double_double_double);
                     }
                 }
-                case Parser.Func func -> {
+                case Func func -> {
                     for(var arg : func.args()) build_(arg);
                     var name = func.name();
                     if(Objects.equals(name, "ln")) name = "log";
                     cob.invokestatic(CD_Math, name, MD_double_doubleN[func.args().size()]);
                 }
-                case Parser.UnOp unOp -> {
+                case UnOp unOp -> {
                     build_(unOp.expr());
                     switch(unOp){
-                        case Parser.Neg _ -> cob.dneg();
+                        case Neg _ -> cob.dneg();
                     }
                 }
             }

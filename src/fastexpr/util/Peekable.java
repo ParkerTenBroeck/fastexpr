@@ -1,4 +1,4 @@
-package util;
+package fastexpr.util;
 
 public class Peekable<T> implements Iterator<T>{
     final Iterator<T> iter;

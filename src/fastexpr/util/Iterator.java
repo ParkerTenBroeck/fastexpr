@@ -1,4 +1,4 @@
-package util;
+package fastexpr.util;
 
 @FunctionalInterface
 public interface Iterator<T> {
