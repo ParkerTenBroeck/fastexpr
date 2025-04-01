@@ -6,12 +6,9 @@ public static void main() throws Exception {
 
 
     var expr = "f(x) = 1/(1+e^x)";
-//    System.out.println(AST.parse(expr));
-//    System.out.println(AST.parse(expr).derivative("x"));
-//    System.out.println(AST.parse(expr).derivative("x").opt());
-//    System.out.println(AST.parse(expr).derivative("x").opt().compile().eval(0));
     var meow = AST.parse(expr).derivative("x").opt().compile();
-    System.out.println(meow.getClass().getName());
+//    System.out.println();
+    System.out.println(meow);
     if(true)return;
 
     System.out.println(Compiler.compile("f(x) = x^3"));
