@@ -14,6 +14,14 @@ public interface Gen<Y, R> {
         throw new RuntimeException();
     }
 
+    static <R> R await(Gen<Void, R> gen){
+        while(true){
+            var res = gen.next();
+            if(res instanceof Ret(R r))return r;
+            Gen.yield();
+        }
+    }
+
     sealed interface Res<Y, R>{}
     record Yield<Y, R>(Y y) implements Res<Y, R>{}
     record Ret<Y, R>(R y) implements Res<Y, R>{}

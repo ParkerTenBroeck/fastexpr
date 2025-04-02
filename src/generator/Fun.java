@@ -29,7 +29,7 @@ public class Fun {
     public static void run() {
         System.out.println("hello world" + Fun.class.getClassLoader());
 
-        var gen = Test.parse("asldk alskdj alksdj lasdjk lkasjdkl asjdklld aklsjdklj ldkja lskdj ll kjdasl");
+        var gen = Test.parse("f7(x,y,z,w, u,v, othersIg) = v-(x*y+y+ln(z)^2*sin(z*pi/2))/(w*u)+sqrt(othersIg*120e-1)");
         var res = gen.next();
         while (true) {
             System.out.println(res);
@@ -189,6 +189,8 @@ public class Fun {
                     for(var smfi : attr.entries()){
                         var locals = new ArrayList<>(smfi.locals());
                         for(int i = 0; i < mts_params.length; i ++) locals.removeFirst();
+
+//                        locals.removeIf(l -> l==TOP);
                         locals.addFirst(StackMapFrameInfo.ObjectVerificationTypeInfo.of(cd));
                         entries.add(StackMapFrameInfo.of(smfi.target(), locals, smfi.stack()));
                         stackMapFrames.put(smfi.target(), entries.getLast());
@@ -268,7 +270,10 @@ public class Fun {
                                 slot += 1;
                             }
                             case StackMapFrameInfo.SimpleVerificationTypeInfo ti -> {
-                                if(ti==TOP)continue;
+                                if(kind==TOP) {
+                                    slot += 1;
+                                    continue;
+                                }
                                 var type = switch(ti){
                                     case INTEGER -> TypeKind.INT;
                                     case FLOAT -> TypeKind.FLOAT;
