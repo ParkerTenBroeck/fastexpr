@@ -9,10 +9,17 @@ public class Test {
 //        return Gen.ret();
 //    }
 
+    public static Gen<String, Void> parse(String str){
+        for(var split : str.split(" ")){
+            Gen.yield(split);
+        }
+        return Gen.ret();
+    }
+
     public static Gen<String, Void> gen(int times, double mul) {
         mul -= 0.5;
-        for (; times > 0; times -= (int) mul) {
-            Gen.yield("iteration number: " + times*mul);
+        for (int i = 0; i < times; i ++) {
+            Gen.yield("iteration number: " + i*mul);
         }
         return Gen.ret();
     }

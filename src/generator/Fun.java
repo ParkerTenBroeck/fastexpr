@@ -25,7 +25,7 @@ public class Fun {
     public static void run() {
         System.out.println("hello world" + Fun.class.getClassLoader());
 
-        var gen = Test.gen(10, 1.5);
+        var gen = Test.parse("asldk alskdj alksdj lasdjk lkasjdkl asjdklld aklsjdklj ldkja lskdj ll kjdasl");
         var res = gen.next();
         while (true) {
             System.out.println(res);
@@ -41,6 +41,8 @@ public class Fun {
 
         private final static ClassDesc CD_Gen = ClassDesc.ofDescriptor(Gen.class.descriptorString());
         private final static ClassDesc CD_Res = ClassDesc.ofDescriptor(Gen.Res.class.descriptorString());
+        private final static ClassDesc CD_Yield = ClassDesc.ofDescriptor(Gen.Yield.class.descriptorString());
+        private final static ClassDesc CD_Ret = ClassDesc.ofDescriptor(Gen.Ret.class.descriptorString());
         private final static MethodTypeDesc MTD_Res = MethodTypeDesc.of(CD_Res);
         private final static MethodTypeDesc MTD_Gen_Obj = MethodTypeDesc.of(CD_Gen, ConstantDescs.CD_Object);
 
@@ -85,7 +87,6 @@ public class Fun {
                                 for (var me : mem) {
                                     if (me instanceof CodeModel com) {
                                         mb.withCode(cob -> rebuildGeneratorMethod(clm, mem, com, cob));
-
                                     } else mb.with(me);
                                 }
                             });
@@ -136,9 +137,17 @@ public class Fun {
                                     cob.return_();
                                 })
                         );
-                        clb.withMethod("next", MTD_Res, ClassFile.ACC_PUBLIC, mb -> mb.withCode(cob -> {
-                            generateStateMachine(cd, clb, com, cob, count);
-                        }));
+                        clb.withMethod("next", MTD_Res, ClassFile.ACC_PUBLIC, mb -> {
+                            mb.withCode(cob -> cob.trying(
+                                    tcob -> {
+                                        generateStateMachine(mts_params, cd, clb, com, tcob, count);
+                                    },
+                                    ctb -> ctb.catchingAll(
+                                            blc -> blc.aload(0).loadConstant(-1).putfield(cd, "___state___", TypeKind.INT.upperBound()).athrow()
+                                    )
+                                ).aconst_null().areturn()
+                            );
+                        });
                     }
             );
             try {
@@ -154,7 +163,7 @@ public class Fun {
         private record YieldBlock(List<CodeElement> block) implements Block{}
         private record RetBlock(List<CodeElement> block) implements Block{}
 
-        private void generateStateMachine(ClassDesc cd, ClassBuilder clb, CodeModel com, CodeBuilder cob, int count) {
+        private void generateStateMachine(ClassDesc[] mts_params, ClassDesc cd, ClassBuilder clb, CodeModel com, CodeBuilder cob, int count) {
             clb.withField("___state___", TypeKind.INT.upperBound(), ClassFile.ACC_PRIVATE);
             var stateSwitchCases = new ArrayList<SwitchCase>();
             var invalidState = cob.newLabel();
@@ -171,14 +180,64 @@ public class Fun {
             var end = cob.newLabel();
             cob.localVariable(0, "this", cd, start, end);
 
-            var stackTypes = new ArrayList<TypeKind>();
-            var localVarTypes = new HashMap<Integer, TypeKind>();
+            class LocalTracker{
+                HashMap<Integer, ClassDesc> parameter_map = new HashMap<>();
+                ArrayList<TypeKind> stackTypes = new ArrayList<>();
+                HashMap<Integer, TypeKind> localVarTypes = new HashMap<>();
+                HashMap<Integer, ClassDesc> localVarDetailedType = new HashMap<>();
+
+                {
+                    int offset = 0;
+                    for (var param : mts_params) {
+                        parameter_map.put(offset, param);
+                        offset += TypeKind.from(param).slotSize();
+                    }
+                }
+
+                public ClassDesc paramType(int slot){
+                    return parameter_map.get(slot);
+                }
+
+                public void addDetailedLocal(int slot, ClassDesc desc) {
+                    localVarDetailedType.put(slot, desc);
+                }
+
+                public void addLocal(int slot, TypeKind typeKind) {
+                    var prev = localVarTypes.put(slot, typeKind);
+                    if(prev !=null && !prev.equals(typeKind))
+                        throw new RuntimeException("Type miss match");
+                }
+
+                interface LocalConsumer{
+                    void consume(int slot, TypeKind tk, ClassDesc desc);
+                }
+
+                void foreach(LocalConsumer consumer){
+                    for(var entry : localVarTypes.entrySet()){
+                        consumer.consume(entry.getKey(), entry.getValue(), localVarDetailedType.getOrDefault(entry.getKey(), entry.getValue().upperBound()));
+                    }
+                }
+            }
+            var localTracker = new LocalTracker();
 
             switchCase = 1;
             cob.labelBinding(stateSwitchCases.removeFirst().target());
             final boolean[] ignore_next_return = {false};
             final boolean[] ignore_next_pop = {false};
             for (CodeElement coe : com) {
+                switch(coe){
+                    case Instruction ins when ins.opcode() == Opcode.POP && ignore_next_pop[0] -> {
+                        ignore_next_pop[0] = false;
+                        continue;
+                    }
+                    case ReturnInstruction _ when ignore_next_return[0] -> {
+                        ignore_next_return[0] = false;
+                        continue;
+                    }
+                    case Instruction _ when ignore_next_return[0] || ignore_next_pop[0] ->
+                        throw new RuntimeException();
+                    default -> {}
+                }
                 switch (coe) {
                     case InvokeInstruction is when is.opcode().equals(Opcode.INVOKESTATIC) && is.owner().asSymbol().equals(CD_Gen) && (is.name().equalsString("yield") || is.name().equalsString("ret")) -> {
                         if (MethodTypeDesc.ofDescriptor(is.method().type().stringValue()).parameterArray().length == 0) {
@@ -186,41 +245,53 @@ public class Fun {
                         }
 
                         if (is.name().equalsString("ret")) {
-                            cob.aload(0).loadConstant(-1).putfield(cd, "___state___", TypeKind.INT.upperBound()).areturn();
+                            cob.aload(0).loadConstant(-1).putfield(cd, "___state___", TypeKind.INT.upperBound())
+                                    .new_(CD_Ret)
+                                    .dup_x1()
+                                    .swap()
+                                    .invokespecial(CD_Ret, ConstantDescs.INIT_NAME, MethodTypeDesc.of(ConstantDescs.CD_void, ConstantDescs.CD_Object))
+                                    .areturn();
                             ignore_next_return[0] = true;
                         } else {
-                            cob.aload(0).loadConstant(switchCase).putfield(cd, "___state___", TypeKind.INT.upperBound()).areturn();
+                            localTracker.foreach((slot, tk, desc) -> {
+                                cob.aload(0).loadLocal(tk, slot).putfield(cd, "local_" + slot, desc);
+                            });
+                            cob.aload(0).loadConstant(switchCase).putfield(cd, "___state___", TypeKind.INT.upperBound())
+                                    .new_(CD_Yield)
+                                    .dup_x1()
+                                    .swap()
+                                    .invokespecial(CD_Yield, ConstantDescs.INIT_NAME, MethodTypeDesc.of(ConstantDescs.CD_void, ConstantDescs.CD_Object))
+                                    .areturn();
                             switchCase++;
                             cob.labelBinding(stateSwitchCases.removeFirst().target());
+                            localTracker.foreach((slot, tk, desc) -> {
+                                cob.aload(0).getfield(cd, "local_" + slot, desc).storeLocal(tk, slot);
+                            });
                             ignore_next_pop[0] = true;
                         }
                     }
-                    case Instruction ins when ins.opcode() == Opcode.POP && ignore_next_pop[0] ->
-                            ignore_next_pop[0] = false;
-                    case ReturnInstruction _ when ignore_next_return[0] ->
-                            ignore_next_return[0] = false;
                     case BranchInstruction b -> cob.with(b);
                     case LocalVariable lv when lv.slot() < count -> {}
-                    case LocalVariable lv ->
-                            cob.localVariable(lv.slot() - count + 1, lv.name(), lv.type(), lv.startScope(), lv.endScope());
+                    case LocalVariable lv -> {
+                        cob.localVariable(lv.slot() - count + 1, lv.name(), lv.type(), lv.startScope(), lv.endScope());
+                        localTracker.addDetailedLocal(lv.slot() - count + 1, lv.typeSymbol());
+                    }
 
                     case IncrementInstruction ii when ii.slot() < count -> throw new RuntimeException();
                     case IncrementInstruction ii -> cob.iinc(ii.slot() - count + 1, ii.constant());
 
                     case LoadInstruction li when li.slot() < count ->
-                            cob.aload(0).getfield(cd, "param_" + li.slot(), li.typeKind().upperBound());
+                            cob.aload(0).getfield(cd, "param_" + li.slot(), localTracker.paramType(li.slot()));
                     case LoadInstruction li ->
                         cob.loadLocal(li.typeKind(), li.slot() - count + 1);
 
                     case StoreInstruction ls when ls.slot() < count && ls.typeKind().slotSize()==2 ->
-                            cob.aload(0).dup_x2().pop().putfield(cd, "param_" + ls.slot(), ls.typeKind().upperBound());
+                            cob.aload(0).dup_x2().pop().putfield(cd, "param_" + ls.slot(), localTracker.paramType(ls.slot()));
                     case StoreInstruction ls when ls.slot() < count ->
-                            cob.aload(0).swap().putfield(cd, "param_" + ls.slot(), ls.typeKind().upperBound());
+                            cob.aload(0).swap().putfield(cd, "param_" + ls.slot(), localTracker.paramType(ls.slot()));
 
                     case StoreInstruction ls -> {
-                        var prev = localVarTypes.put(ls.slot() - count + 1, ls.typeKind());
-                        if(prev !=null && !prev.equals(ls.typeKind()))
-                            throw new RuntimeException("Type miss match");
+                        localTracker.addLocal(ls.slot() - count + 1, ls.typeKind());
                         cob.storeLocal(ls.typeKind(), ls.slot() - count + 1);
                     }
                     case ConstantInstruction ci -> cob.loadConstant(ci.constantValue());
@@ -229,8 +300,12 @@ public class Fun {
                 }
             }
             cob.labelBinding(invalidState);
-            cob.aconst_null().areturn();
+            cob.new_(ClassDesc.ofDescriptor(IllegalStateException.class.descriptorString())).athrow();
             cob.labelBinding(end);
+
+            localTracker.foreach((slot, tk, desc) -> {
+                clb.withField("local_" + slot, desc, ClassFile.ACC_PRIVATE);
+            });
         }
 
         private void rebuildGeneratorMethod(ClassModel clm, MethodModel mem, CodeModel com, CodeBuilder cob) {
