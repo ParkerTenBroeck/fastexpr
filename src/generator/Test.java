@@ -10,14 +10,28 @@ public class Test {
 //    }
 
     public static Gen<String, Void> parse(String str){
+        {
+            String meow = "10";
+            meow += "11";
+            Gen.yield(meow);
+        }
         for(var split : str.split(" ")){
             Gen.yield(split);
         }
-//        while(str.length()>10){
-//            var len = str.length();
-//            Gen.yield(len+" length");
-//            str = str.substring(1);
-//        }
+        {
+            var str2 = str;
+            while(str2.length()>10){
+                var len = str2.length();
+                Gen.yield(len+" length");
+                str2 = str2.substring(1);
+            }
+        }
+
+        while(str.length()>10){
+            var len = str.length();
+            Gen.yield(len+" length");
+            str = str.substring(1);
+        }
         return Gen.ret();
     }
 

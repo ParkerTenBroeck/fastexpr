@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.classfile.*;
 import java.lang.classfile.attribute.StackMapFrameInfo;
-import java.lang.classfile.attribute.StackMapTableAttribute;
 import java.lang.classfile.instruction.*;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.ConstantDescs;
@@ -17,6 +16,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static java.lang.classfile.attribute.StackMapFrameInfo.SimpleVerificationTypeInfo.TOP;
 
 public class Fun {
     public static void main(String... args) throws Exception {
@@ -162,13 +164,18 @@ public class Fun {
         }
 
         private static class LocalTracker{
+
+            record LocalStore(String name, ClassDesc cd){}
+
             HashMap<Integer, ClassDesc> parameter_map = new HashMap<>();
-            ArrayList<TypeKind> stackTypes = new ArrayList<>();
+//            ArrayList<TypeKind> stackTypes = new ArrayList<>();
+
             HashMap<Integer, TypeKind> localVarTypes = new HashMap<>();
             HashMap<Integer, ClassDesc> localVarDetailedType = new HashMap<>();
-            HashMap<Label, StackMapFrameInfo> attrMap = new HashMap<>();
-
+            HashMap<Label, StackMapFrameInfo> stackMapFrames = new HashMap<>();
             StackMapFrameInfo currentFrame;
+            ArrayList<LocalStore> localStore = new ArrayList<>();
+
 
             private LocalTracker(ClassDesc[] mts_params, ClassDesc cd, ClassBuilder clb, CodeModel com, CodeBuilder cob, int count){
                 int offset = 0;
@@ -182,16 +189,56 @@ public class Fun {
                     for(var smfi : attr.entries()){
                         var locals = new ArrayList<>(smfi.locals());
                         for(int i = 0; i < mts_params.length; i ++) locals.removeFirst();
+                        locals.addFirst(StackMapFrameInfo.ObjectVerificationTypeInfo.of(cd));
                         entries.add(StackMapFrameInfo.of(smfi.target(), locals, smfi.stack()));
-                        attrMap.put(smfi.target(), entries.getLast());
+                        stackMapFrames.put(smfi.target(), entries.getLast());
+                        System.out.print(entries.getLast());
                     }
+                    System.out.println();
+                }
+            }
+
+
+            //Tries its best to reuse old saved locals field slots, only reuses if types exactly match
+            public void savingLocals(ClassDesc cd, CodeBuilder cob, Runnable run) {
+                record Saved(int slot, String name, ClassDesc cd){};
+                var saved = new ArrayList<Saved>();
+                var lls = new ArrayList<>(localStore);
+                foreach((slot, tk, desc) -> {
+                    String name = null;
+                    for(int i = 0; i < lls.size(); i ++)
+                        if(lls.get(i).cd.equals(desc)){
+                            name = lls.get(i).name;
+                            lls.remove(i);
+                            break;
+                        }
+                    if(name==null){
+                        name = "local_" + localStore.size();
+                        localStore.add(new LocalStore(name, desc));
+                    }
+                    saved.add(new Saved(slot, name, desc));
+                    cob.aload(0).loadLocal(tk, slot).putfield(cd, name, desc);
+                });
+                run.run();
+
+                for(var save : saved){
+                    cob.aload(0).getfield(cd, save.name, save.cd).storeLocal(TypeKind.from(save.cd), save.slot);
+                }
+            }
+
+            public void createLocalStoreFields(ClassBuilder clb){
+                for (var local : localStore) {
+                    clb.withField(local.name, local.cd, ClassFile.ACC_PRIVATE);
                 }
             }
 
             public void encounterLabel(Label l){
-                var tmp = attrMap.get(l);
-                if(tmp!=null)
+                var tmp = stackMapFrames.get(l);
+                if(tmp!=null){
+                    localVarTypes.clear();
+                    localVarDetailedType.clear();
                     currentFrame=tmp;
+                }
             }
 
             public ClassDesc paramType(int slot){
@@ -204,8 +251,6 @@ public class Fun {
 
             public void addLocal(int slot, TypeKind typeKind) {
                 var prev = localVarTypes.put(slot, typeKind);
-                if(prev !=null && !prev.equals(typeKind))
-                    throw new RuntimeException("Type miss match");
             }
 
             interface LocalConsumer{
@@ -213,30 +258,39 @@ public class Fun {
             }
 
             void foreach(LocalConsumer consumer){
-                for(var entry : localVarTypes.entrySet()){
-                    ClassDesc detailed = null;
-                    if(currentFrame!=null){
-                        if(currentFrame.locals().size()>entry.getKey()-1){
-                            //TODO this doesn't account for slot size
-                            var el = currentFrame.locals().get(entry.getKey()-1);
-                            switch (el){
-                                case StackMapFrameInfo.ObjectVerificationTypeInfo objectVerificationTypeInfo -> {
-                                    detailed = objectVerificationTypeInfo.classSymbol();
-                                    localVarDetailedType.put(entry.getKey(), detailed);
-                                }
-                                case StackMapFrameInfo.SimpleVerificationTypeInfo simpleVerificationTypeInfo -> {
-                                }
-                                case StackMapFrameInfo.UninitializedVerificationTypeInfo uninitializedVerificationTypeInfo -> {
-                                }
+                var slot = 0;
+                if(currentFrame!=null)
+                    for(var kind : currentFrame.locals()){
+                        switch(kind){
+                            case StackMapFrameInfo.ObjectVerificationTypeInfo o -> {
+                                if(slot!=0)
+                                    consumer.consume(slot, o.className().typeKind(), o.classSymbol());
+                                slot += 1;
                             }
+                            case StackMapFrameInfo.SimpleVerificationTypeInfo ti -> {
+                                if(ti==TOP)continue;
+                                var type = switch(ti){
+                                    case INTEGER -> TypeKind.INT;
+                                    case FLOAT -> TypeKind.FLOAT;
+                                    case DOUBLE -> TypeKind.DOUBLE;
+                                    case LONG -> TypeKind.LONG;
+                                    case NULL -> TypeKind.REFERENCE;
+                                    default ->
+                                            throw new IllegalStateException();
+                                };
+                                consumer.consume(slot, type, type.upperBound());
+                                slot += type.slotSize();
+                            }
+                            case StackMapFrameInfo.UninitializedVerificationTypeInfo _ ->
+                                    throw new IllegalStateException();
                         }
-
                     }
-                    if(detailed==null)
-                        detailed = localVarDetailedType.get(entry.getKey());
-                    if(detailed==null)
-                        detailed = entry.getValue().upperBound();
-                    consumer.consume(entry.getKey(), entry.getValue(), detailed);
+                for(var entry : localVarTypes.entrySet()){
+                    if(entry.getKey()<slot)continue;
+                    ClassDesc cd = entry.getValue().upperBound();
+                    if(localVarDetailedType.containsKey(entry.getKey()))
+                        cd = localVarDetailedType.get(entry.getKey());
+                    consumer.consume(entry.getKey(), TypeKind.from(cd), cd);
                 }
             }
         }
@@ -302,20 +356,18 @@ public class Fun {
                                     .areturn();
                             ignore_next_return[0] = true;
                         } else {
-                            localTracker.foreach((slot, tk, desc) -> {
-                                cob.aload(0).loadLocal(tk, slot).putfield(cd, "local_" + slot, desc);
-                            });
-                            cob.aload(0).loadConstant(switchCase).putfield(cd, "___state___", TypeKind.INT.upperBound())
-                                    .new_(CD_Yield)
-                                    .dup_x1()
-                                    .swap()
-                                    .invokespecial(CD_Yield, ConstantDescs.INIT_NAME, MethodTypeDesc.of(ConstantDescs.CD_void, ConstantDescs.CD_Object))
-                                    .areturn();
+                            int finalSwitchCase = switchCase;
                             switchCase++;
-                            cob.labelBinding(stateSwitchCases.removeFirst().target());
-                            localTracker.foreach((slot, tk, desc) -> {
-                                cob.aload(0).getfield(cd, "local_" + slot, desc).storeLocal(tk, slot);
+                            localTracker.savingLocals(cd, cob, () -> {
+                                cob.aload(0).loadConstant(finalSwitchCase).putfield(cd, "___state___", TypeKind.INT.upperBound())
+                                        .new_(CD_Yield)
+                                        .dup_x1()
+                                        .swap()
+                                        .invokespecial(CD_Yield, ConstantDescs.INIT_NAME, MethodTypeDesc.of(ConstantDescs.CD_void, ConstantDescs.CD_Object))
+                                        .areturn();
+                                cob.labelBinding(stateSwitchCases.removeFirst().target());
                             });
+
                             ignore_next_pop[0] = true;
                         }
                     }
@@ -323,7 +375,8 @@ public class Fun {
                     case LocalVariable lv when lv.slot() < count -> {}
                     case LocalVariable lv -> {
                         cob.localVariable(lv.slot() - count + 1, lv.name(), lv.type(), lv.startScope(), lv.endScope());
-                        localTracker.addDetailedLocal(lv.slot() - count + 1, lv.typeSymbol());
+                        //this might be useful to add?
+//                        localTracker.addDetailedLocal(lv.slot() - count + 1, lv.typeSymbol());
                     }
 
                     case IncrementInstruction ii when ii.slot() < count -> throw new RuntimeException();
@@ -356,9 +409,7 @@ public class Fun {
                 .athrow();
             cob.labelBinding(end);
 
-            localTracker.foreach((slot, tk, desc) -> {
-                clb.withField("local_" + slot, desc, ClassFile.ACC_PRIVATE);
-            });
+            localTracker.createLocalStoreFields(clb);
         }
 
         private void rebuildGeneratorMethod(ClassModel clm, MethodModel mem, CodeModel com, CodeBuilder cob) {
