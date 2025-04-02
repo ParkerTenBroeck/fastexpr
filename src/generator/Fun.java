@@ -4,6 +4,8 @@ package generator;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.classfile.*;
+import java.lang.classfile.attribute.StackMapFrameInfo;
+import java.lang.classfile.attribute.StackMapTableAttribute;
 import java.lang.classfile.instruction.*;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.ConstantDescs;
@@ -102,7 +104,7 @@ public class Fun {
         private ClassDesc generateGeneratorFromGenMethod(ClassModel clm, MethodModel mem, CodeModel com, CodeBuilder scob) {
             var cd = ClassDesc.of("Gen" + customClazzDefMap.size());
 
-            var bytes = ClassFile.of().build(cd, clb -> {
+            var bytes = ClassFile.of(ClassFile.StackMapsOption.STACK_MAPS_WHEN_REQUIRED).build(cd, clb -> {
 
                         clb.withInterfaces(List.of(clb.constantPool().classEntry(CD_Gen)));
 
@@ -159,11 +161,89 @@ public class Fun {
             return cd;
         }
 
-        private sealed interface Block{}
-        private record YieldBlock(List<CodeElement> block) implements Block{}
-        private record RetBlock(List<CodeElement> block) implements Block{}
+        private static class LocalTracker{
+            HashMap<Integer, ClassDesc> parameter_map = new HashMap<>();
+            ArrayList<TypeKind> stackTypes = new ArrayList<>();
+            HashMap<Integer, TypeKind> localVarTypes = new HashMap<>();
+            HashMap<Integer, ClassDesc> localVarDetailedType = new HashMap<>();
+            HashMap<Label, StackMapFrameInfo> attrMap = new HashMap<>();
+
+            StackMapFrameInfo currentFrame;
+
+            private LocalTracker(ClassDesc[] mts_params, ClassDesc cd, ClassBuilder clb, CodeModel com, CodeBuilder cob, int count){
+                int offset = 0;
+                for (var param : mts_params) {
+                    parameter_map.put(offset, param);
+                    offset += TypeKind.from(param).slotSize();
+                }
+
+                for(var attr : com.findAttributes(Attributes.stackMapTable())){
+                    var entries = new ArrayList<StackMapFrameInfo>();
+                    for(var smfi : attr.entries()){
+                        var locals = new ArrayList<>(smfi.locals());
+                        for(int i = 0; i < mts_params.length; i ++) locals.removeFirst();
+                        entries.add(StackMapFrameInfo.of(smfi.target(), locals, smfi.stack()));
+                        attrMap.put(smfi.target(), entries.getLast());
+                    }
+                }
+            }
+
+            public void encounterLabel(Label l){
+                var tmp = attrMap.get(l);
+                if(tmp!=null)
+                    currentFrame=tmp;
+            }
+
+            public ClassDesc paramType(int slot){
+                return parameter_map.get(slot);
+            }
+
+            public void addDetailedLocal(int slot, ClassDesc desc) {
+                localVarDetailedType.put(slot, desc);
+            }
+
+            public void addLocal(int slot, TypeKind typeKind) {
+                var prev = localVarTypes.put(slot, typeKind);
+                if(prev !=null && !prev.equals(typeKind))
+                    throw new RuntimeException("Type miss match");
+            }
+
+            interface LocalConsumer{
+                void consume(int slot, TypeKind tk, ClassDesc desc);
+            }
+
+            void foreach(LocalConsumer consumer){
+                for(var entry : localVarTypes.entrySet()){
+                    ClassDesc detailed = null;
+                    if(currentFrame!=null){
+                        if(currentFrame.locals().size()>entry.getKey()-1){
+                            //TODO this doesn't account for slot size
+                            var el = currentFrame.locals().get(entry.getKey()-1);
+                            switch (el){
+                                case StackMapFrameInfo.ObjectVerificationTypeInfo objectVerificationTypeInfo -> {
+                                    detailed = objectVerificationTypeInfo.classSymbol();
+                                    localVarDetailedType.put(entry.getKey(), detailed);
+                                }
+                                case StackMapFrameInfo.SimpleVerificationTypeInfo simpleVerificationTypeInfo -> {
+                                }
+                                case StackMapFrameInfo.UninitializedVerificationTypeInfo uninitializedVerificationTypeInfo -> {
+                                }
+                            }
+                        }
+
+                    }
+                    if(detailed==null)
+                        detailed = localVarDetailedType.get(entry.getKey());
+                    if(detailed==null)
+                        detailed = entry.getValue().upperBound();
+                    consumer.consume(entry.getKey(), entry.getValue(), detailed);
+                }
+            }
+        }
 
         private void generateStateMachine(ClassDesc[] mts_params, ClassDesc cd, ClassBuilder clb, CodeModel com, CodeBuilder cob, int count) {
+
+
             clb.withField("___state___", TypeKind.INT.upperBound(), ClassFile.ACC_PRIVATE);
             var stateSwitchCases = new ArrayList<SwitchCase>();
             var invalidState = cob.newLabel();
@@ -180,45 +260,9 @@ public class Fun {
             var end = cob.newLabel();
             cob.localVariable(0, "this", cd, start, end);
 
-            class LocalTracker{
-                HashMap<Integer, ClassDesc> parameter_map = new HashMap<>();
-                ArrayList<TypeKind> stackTypes = new ArrayList<>();
-                HashMap<Integer, TypeKind> localVarTypes = new HashMap<>();
-                HashMap<Integer, ClassDesc> localVarDetailedType = new HashMap<>();
+            var localTracker = new LocalTracker(mts_params, cd,clb,com,cob,count);
 
-                {
-                    int offset = 0;
-                    for (var param : mts_params) {
-                        parameter_map.put(offset, param);
-                        offset += TypeKind.from(param).slotSize();
-                    }
-                }
-
-                public ClassDesc paramType(int slot){
-                    return parameter_map.get(slot);
-                }
-
-                public void addDetailedLocal(int slot, ClassDesc desc) {
-                    localVarDetailedType.put(slot, desc);
-                }
-
-                public void addLocal(int slot, TypeKind typeKind) {
-                    var prev = localVarTypes.put(slot, typeKind);
-                    if(prev !=null && !prev.equals(typeKind))
-                        throw new RuntimeException("Type miss match");
-                }
-
-                interface LocalConsumer{
-                    void consume(int slot, TypeKind tk, ClassDesc desc);
-                }
-
-                void foreach(LocalConsumer consumer){
-                    for(var entry : localVarTypes.entrySet()){
-                        consumer.consume(entry.getKey(), entry.getValue(), localVarDetailedType.getOrDefault(entry.getKey(), entry.getValue().upperBound()));
-                    }
-                }
-            }
-            var localTracker = new LocalTracker();
+            System.out.println();
 
             switchCase = 1;
             cob.labelBinding(stateSwitchCases.removeFirst().target());
@@ -236,6 +280,11 @@ public class Fun {
                     }
                     case Instruction _ when ignore_next_return[0] || ignore_next_pop[0] ->
                         throw new RuntimeException();
+
+                    case Label l -> {
+                        localTracker.encounterLabel(l);
+                    }
+
                     default -> {}
                 }
                 switch (coe) {
@@ -294,13 +343,17 @@ public class Fun {
                         localTracker.addLocal(ls.slot() - count + 1, ls.typeKind());
                         cob.storeLocal(ls.typeKind(), ls.slot() - count + 1);
                     }
-                    case ConstantInstruction ci -> cob.loadConstant(ci.constantValue());
+                    case ConstantInstruction ci -> {
+                        cob.loadConstant(ci.constantValue());
+                    }
 
-                    case null, default -> cob.with(coe);
+                    default -> cob.with(coe);
                 }
             }
             cob.labelBinding(invalidState);
-            cob.new_(ClassDesc.ofDescriptor(IllegalStateException.class.descriptorString())).athrow();
+            cob.new_(ClassDesc.ofDescriptor(IllegalStateException.class.descriptorString())).dup()
+                    .invokespecial(ClassDesc.ofDescriptor(IllegalStateException.class.descriptorString()), ConstantDescs.INIT_NAME, ConstantDescs.MTD_void)
+                .athrow();
             cob.labelBinding(end);
 
             localTracker.foreach((slot, tk, desc) -> {

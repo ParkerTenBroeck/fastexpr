@@ -13,16 +13,21 @@ public class Test {
         for(var split : str.split(" ")){
             Gen.yield(split);
         }
+//        while(str.length()>10){
+//            var len = str.length();
+//            Gen.yield(len+" length");
+//            str = str.substring(1);
+//        }
         return Gen.ret();
     }
 
-    public static Gen<String, Void> gen(int times, double mul) {
-        mul -= 0.5;
-        for (int i = 0; i < times; i ++) {
-            Gen.yield("iteration number: " + i*mul);
-        }
-        return Gen.ret();
-    }
+//    public static Gen<String, Void> gen(int times, double mul) {
+//        mul -= 0.5;
+//        for (int i = 0; i < times; i ++) {
+//            Gen.yield("iteration number: " + i*mul);
+//        }
+//        return Gen.ret();
+//    }
 //    public static Gen<String, Void> gen(int times, double mul) {
 //        mul -= 0.5;
 //        for (int i = 0; i < times; i++) {
