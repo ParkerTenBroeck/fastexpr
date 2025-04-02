@@ -27,7 +27,12 @@ public class Fun {
     }
 
     public static void run() {
-        System.out.println("hello world" + Fun.class.getClassLoader());
+        {
+            var gen = Test.test(new double[]{1,2,3,45,6,4,3,3,452,452,45,345,45});
+            while (gen.next() instanceof Gen.Yield(var val)) {
+                System.out.println(val);
+            }
+        }
 
         var gen = Test.parse("f7(x,y,z,w, u,v, othersIg) = v-(x*y+y+ln(z)^2*sin(z*pi/2))/(w*u)+sqrt(othersIg*120e-1)");
         var res = gen.next();
@@ -168,7 +173,6 @@ public class Fun {
             record LocalStore(String name, ClassDesc cd){}
 
             HashMap<Integer, ClassDesc> parameter_map = new HashMap<>();
-//            ArrayList<TypeKind> stackTypes = new ArrayList<>();
 
             HashMap<Integer, TypeKind> localVarTypes = new HashMap<>();
             HashMap<Integer, ClassDesc> localVarDetailedType = new HashMap<>();
@@ -189,14 +193,10 @@ public class Fun {
                     for(var smfi : attr.entries()){
                         var locals = new ArrayList<>(smfi.locals());
                         for(int i = 0; i < mts_params.length; i ++) locals.removeFirst();
-
-//                        locals.removeIf(l -> l==TOP);
                         locals.addFirst(StackMapFrameInfo.ObjectVerificationTypeInfo.of(cd));
                         entries.add(StackMapFrameInfo.of(smfi.target(), locals, smfi.stack()));
                         stackMapFrames.put(smfi.target(), entries.getLast());
-                        System.out.print(entries.getLast());
                     }
-                    System.out.println();
                 }
             }
 
@@ -272,6 +272,12 @@ public class Fun {
                             case StackMapFrameInfo.SimpleVerificationTypeInfo ti -> {
                                 if(kind==TOP) {
                                     slot += 1;
+                                    if(localVarTypes.get(slot-1) instanceof TypeKind tk){
+                                        ClassDesc cd = tk.upperBound();
+                                        if(localVarDetailedType.get(slot-1) instanceof ClassDesc cld)
+                                            cd = cld;
+                                        consumer.consume(slot-1, tk, cd);
+                                    }
                                     continue;
                                 }
                                 var type = switch(ti){
@@ -284,7 +290,7 @@ public class Fun {
                                             throw new IllegalStateException();
                                 };
                                 consumer.consume(slot, type, type.upperBound());
-                                slot += type.slotSize();
+                                slot += 1;
                             }
                             case StackMapFrameInfo.UninitializedVerificationTypeInfo _ ->
                                     throw new IllegalStateException();
@@ -320,8 +326,6 @@ public class Fun {
             cob.localVariable(0, "this", cd, start, end);
 
             var localTracker = new LocalTracker(mts_params, cd,clb,com,cob,count);
-
-            System.out.println();
 
             switchCase = 1;
             cob.labelBinding(stateSwitchCases.removeFirst().target());

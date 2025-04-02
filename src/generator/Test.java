@@ -16,6 +16,13 @@ public class Test {
 //        return Gen.ret();
 //    }
 
+    public static Gen<Double, Void>test(double[] nyas){
+        for(var d : nyas){
+            Gen.yield(d);
+        }
+        return Gen.ret();
+    }
+
     public sealed interface Token{}
     public enum Punc implements Token {
         LPar,
